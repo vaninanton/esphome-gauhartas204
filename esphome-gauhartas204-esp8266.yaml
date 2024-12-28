@@ -1,0 +1,234 @@
+esphome:
+  name: esphome-gauhartas204
+  friendly_name: ESPHome Gauhartas 204
+  # Automatically add the mac address to the name
+  # so you can use a single firmware for all devices
+  # name_add_mac_suffix: true
+
+esp8266:
+  board: d1_mini
+  framework:
+    version: recommended
+
+# To be able to get logs from the device via serial and api.
+logger:
+
+# API is a requirement of the dashboard import.
+api:
+
+# OTA is required for Over-the-Air updating
+ota:
+  - platform: esphome
+
+wifi:
+  # Set up a wifi access point using the device name above
+  ap:
+
+# In combination with the `ap` this allows the user
+# to provision wifi credentials to the device.
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+
+uart:
+  - id: uart_bus
+    baud_rate: 19200
+    tx_pin: GPIO1
+    rx_pin: GPIO3
+
+switch:
+  # - platform: uart
+  #   name: "prt10"
+  #   id: "prt10"
+  #   data:
+  #     turn_on: "*1 PRT 0 1 $\r\n"
+  #     turn_off: "*1 PRT 0 0 $\r\n"
+
+  - platform: uart
+    name: "BathroomLight"
+    id: "BathroomLight"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*1 PRT 1 1 $\r\n"
+      turn_off: "*1 PRT 1 0 $\r\n"
+
+  - platform: uart
+    name: "BathroomHall"
+    id: "BathroomHall"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*1 PRT 2 1 $\r\n"
+      turn_off: "*1 PRT 2 0 $\r\n"
+
+  - platform: uart
+    name: "KitchenLight"
+    id: "KitchenLight"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*1 PRT 3 1 $\r\n"
+      turn_off: "*1 PRT 3 0 $\r\n"
+
+  - platform: uart
+    name: "KitchenTable"
+    id: "KitchenTable"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*1 PRT 4 1 $\r\n"
+      turn_off: "*1 PRT 4 0 $\r\n"
+
+  - platform: uart
+    name: "HallLight"
+    id: "HallLight"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*1 PRT 5 1 $\r\n"
+      turn_off: "*1 PRT 5 0 $\r\n"
+
+  - platform: uart
+    name: "LivingroomSubLight"
+    id: "LivingroomSubLight"
+    icon: "mdi:wall-sconce"
+    data:
+      turn_on: "*1 PRT 6 1 $\r\n"
+      turn_off: "*1 PRT 6 0 $\r\n"
+
+  - platform: uart
+    name: "BathroomSubLight"
+    id: "BathroomSubLight"
+    icon: "mdi:wall-sconce"
+    data:
+      turn_on: "*1 PRT 7 1 $\r\n"
+      turn_off: "*1 PRT 7 0 $\r\n"
+
+  # - platform: uart
+  #   name: "prt20"
+  #   id: "prt20"
+  #   data:
+  #     turn_on: "*2 PRT 0 1 $\r\n"
+  #     turn_off: "*2 PRT 0 0 $\r\n"
+
+  - platform: uart
+    name: "SleepingroomRight"
+    id: "SleepingroomRight"
+    icon: "mdi:wall-sconce"
+    data:
+      turn_on: "*2 PRT 1 1 $\r\n"
+      turn_off: "*2 PRT 1 0 $\r\n"
+
+  - platform: uart
+    name: "BalconyLight"
+    id: "BalconyLight"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*2 PRT 2 1 $\r\n"
+      turn_off: "*2 PRT 2 0 $\r\n"
+
+  - platform: uart
+    name: "SleepingroomLight"
+    id: "SleepingroomLight"
+    icon: "mdi:bed-king-outline"
+    data:
+      turn_on: "*2 PRT 3 1 $\r\n"
+      turn_off: "*2 PRT 3 0 $\r\n"
+
+  # - platform: uart
+  #   name: "prt24"
+  #   id: "prt24"
+  #   data:
+  #     turn_on: "*2 PRT 4 1 $\r\n"
+  #     turn_off: "*2 PRT 4 0 $\r\n"
+
+  - platform: uart
+    name: "SleepingroomLeft"
+    id: "SleepingroomLeft"
+    icon: "mdi:wall-sconce"
+    data:
+      turn_on: "*2 PRT 5 1 $\r\n"
+      turn_off: "*2 PRT 5 0 $\r\n"
+
+  - platform: uart
+    name: "LivingroomLight"
+    id: "LivingroomLight"
+    icon: "mdi:ceiling-light-multiple-outline"
+    data:
+      turn_on: "*2 PRT 6 1 $\r\n"
+      turn_off: "*2 PRT 6 0 $\r\n"
+
+  - platform: uart
+    id: SleepingroomWardrobe
+    icon: "mdi:wardrobe-outline"
+    data:
+      turn_on: "*2 PRT 7 1 $\r\n"
+      turn_off: "*2 PRT 7 0 $\r\n"
+
+button:
+  - platform: uart
+    name: "Выключить всё"
+    data: "*999998$\r\n"
+    id: "alloff"
+    icon: "mdi:power"
+
+  - platform: uart
+    entity_category: "diagnostic"
+    name: "status_wm_on"
+    data: "*WM ON$\r\n"
+    internal: true
+
+  - platform: uart
+    entity_category: "diagnostic"
+    name: "status_wm_off"
+    data: "*WM OFF$\r\n"
+    internal: true
+
+  - platform: uart
+    entity_category: "diagnostic"
+    name: "status_wm_inf"
+    data: "*WM INF$\r\n"
+    internal: true
+
+  - platform: restart
+    entity_category: "diagnostic"
+    name: "Restart ESPHOME"
+    internal: true
+
+valve:
+  - platform: template
+    name: "water"
+    id: "rkwm"
+    device_class: water
+    icon: "mdi:water"
+    optimistic: true
+    open_action:
+      - uart.write:
+          data: "*WM ON$\r\n"
+    close_action:
+      - uart.write:
+          data: "*WM OFF$\r\n"
+
+# Сенсор, считывающий ответы из UART
+text_sensor:
+  - platform: custom
+    lambda: |-
+      auto uart_readline_sensor = new UartReadLineSensor(id(uart_bus));
+      App.register_component(uart_readline_sensor);
+      return {uart_readline_sensor};
+    text_sensors:
+      - name: "latestSerial"
+        internal: true
+        entity_category: "diagnostic"
+
+interval:
+  - interval: 120s
+    then:
+      - uart.write:
+          data: "*1 STS$\r\n"
+      - delay: 3s
+      - uart.write:
+          data: "*2 STS$\r\n"
+
+  - interval: 120s
+    then:
+      - uart.write:
+          data: "*WM INF$\r\n"

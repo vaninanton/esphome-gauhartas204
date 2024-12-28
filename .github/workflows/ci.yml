@@ -22,15 +22,13 @@ jobs:
       matrix:
         #### Modify below here to match your project ####
         file:
-          - project-template-esp32
-          - project-template-esp32-c3
-          - project-template-esp32-s3
+          - esphome-gauhartas204-esp8266
         #### Modify above here to match your project ####
 
         esphome-version:
           - stable
-          - beta
-          - dev
+          # - beta
+          # - dev
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4.1.7
