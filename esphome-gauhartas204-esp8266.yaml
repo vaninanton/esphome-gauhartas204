@@ -224,12 +224,12 @@ interval:
   - interval: 120s
     then:
       - uart.write:
-          data: "*1 STS$"
+          data: "*1 STS$\r\n"
       - delay: 3s
       - uart.write:
-          data: "*2 STS$"
+          data: "*2 STS$\r\n"
 
   - interval: 120s
     then:
       - uart.write:
-          data: "*WM INF$"
+          data: "*WM INF$\r\n"
