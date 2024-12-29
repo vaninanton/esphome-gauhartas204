@@ -4,6 +4,8 @@ esphome:
   # Automatically add the mac address to the name
   # so you can use a single firmware for all devices
   # name_add_mac_suffix: true
+  includes:
+    - uart_read_line_sensor.h
 
 esp8266:
   board: d1_mini
@@ -157,6 +159,7 @@ switch:
       turn_off: "*2 PRT 6 0 $\r\n"
 
   - platform: uart
+    name: SleepingroomWardrobe
     id: SleepingroomWardrobe
     icon: "mdi:wardrobe-outline"
     data:
