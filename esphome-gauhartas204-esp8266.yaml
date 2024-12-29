@@ -157,6 +157,7 @@ switch:
       turn_off: "*2 PRT 6 0 $\r\n"
 
   - platform: uart
+    name: SleepingroomWardrobe
     id: SleepingroomWardrobe
     icon: "mdi:wardrobe-outline"
     data:
@@ -223,12 +224,12 @@ interval:
   - interval: 120s
     then:
       - uart.write:
-          data: "*1 STS$\r\n"
+          data: "*1 STS$"
       - delay: 3s
       - uart.write:
-          data: "*2 STS$\r\n"
+          data: "*2 STS$"
 
   - interval: 120s
     then:
       - uart.write:
-          data: "*WM INF$\r\n"
+          data: "*WM INF$"

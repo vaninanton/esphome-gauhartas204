@@ -68,11 +68,8 @@ public:
 
   void loop() override
   {
-    const int max_line_length = 80;
+    const int max_line_length = 30;
     static char buffer[max_line_length];
-    const char *ra1Prefix = "*RA1";
-    const char *ra2Prefix = "*RA2";
-    const char *rkwmPrefix = "*RK WM";
     while (available())
     {
       if (readline(read(), buffer, max_line_length) > 0)
