@@ -14,6 +14,7 @@ esp8266:
 
 # To be able to get logs from the device via serial and api.
 logger:
+  baud_rate: 0
 
 # API is a requirement of the dashboard import.
 api:
@@ -81,8 +82,8 @@ switch:
       turn_off: "*1 PRT 4 0 $\r\n"
 
   - platform: uart
-    name: "HallLight"
-    id: "HallLight"
+    name: "LobbyLight"
+    id: "LobbyLight"
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 5 1 $\r\n"
@@ -173,28 +174,40 @@ button:
     id: "alloff"
     icon: "mdi:power"
 
+  # Вода перекрывается, сигнал об утечке
   - platform: uart
     entity_category: "diagnostic"
-    name: "status_wm_on"
+    name: "wm_alr"
+    data: "*WM ALR$\r\n"
+
+  - platform: uart
+    entity_category: "diagnostic"
+    name: "wm_on"
     data: "*WM ON$\r\n"
-    internal: true
 
   - platform: uart
     entity_category: "diagnostic"
-    name: "status_wm_off"
+    name: "wm_off"
     data: "*WM OFF$\r\n"
-    internal: true
 
-  - platform: uart
-    entity_category: "diagnostic"
-    name: "status_wm_inf"
-    data: "*WM INF$\r\n"
-    internal: true
+  # - platform: uart
+  #   entity_category: "diagnostic"
+  #   name: "wm_wsd"
+  #   data: "*WM WSD$\r\n"
+
+  # - platform: uart
+  #   entity_category: "diagnostic"
+  #   name: "rk_wm_low"
+  #   data: "*RK WM LOW$\r\n"
+
+  # - platform: uart
+  #   entity_category: "diagnostic"
+  #   name: "wm_reb"
+  #   data: "*WM REB$\r\n"
 
   - platform: restart
     entity_category: "diagnostic"
     name: "Restart ESPHOME"
-    internal: true
 
 valve:
   - platform: template
@@ -202,7 +215,8 @@ valve:
     id: "rkwm"
     device_class: water
     icon: "mdi:water"
-    optimistic: true
+    optimistic: false
+    has_position: false
     open_action:
       - uart.write:
           data: "*WM ON$\r\n"
@@ -219,8 +233,9 @@ text_sensor:
       return {uart_readline_sensor};
     text_sensors:
       - name: "latestSerial"
-        internal: true
         entity_category: "diagnostic"
+  - platform: version
+    name: "ESPHome Version"
 
 interval:
   - interval: 120s
@@ -230,8 +245,11 @@ interval:
       - delay: 3s
       - uart.write:
           data: "*2 STS$\r\n"
-
-  - interval: 120s
-    then:
+      - delay: 3s
       - uart.write:
           data: "*WM INF$\r\n"
+
+status_led:
+  pin:
+    number: D4
+    inverted: true

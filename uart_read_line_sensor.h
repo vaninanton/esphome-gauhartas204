@@ -85,6 +85,7 @@ public:
         // *RA 2 0 0 0 0 0 0 0 0 $
         // *RK WM ON$
         // *RK WM OFF$
+        // *RK WM ALR$
         if (buffer[0] == '*' && buffer[1] == 'R' && buffer[2] == 'A' && buffer[4] == '1')
         {
           // id(prt10).publish_state(buffer[6]  == '1');
@@ -92,7 +93,7 @@ public:
           id(BathroomHall).publish_state(buffer[10] == '1');
           id(KitchenLight).publish_state(buffer[12] == '1');
           id(KitchenTable).publish_state(buffer[14] == '1');
-          id(HallLight).publish_state(buffer[16] == '1');
+          id(LobbyLight).publish_state(buffer[16] == '1');
           id(LivingroomSubLight).publish_state(buffer[18] == '1');
           id(BathroomSubLight).publish_state(buffer[20] == '1');
         }
@@ -107,9 +108,10 @@ public:
           id(LivingroomLight).publish_state(buffer[18] == '1');
           id(SleepingroomWardrobe).publish_state(buffer[20] == '1');
         }
-        else if (buffer[0] == '*' && buffer[1] == 'R' && buffer[2] == 'K' && buffer[4] == 'W' && buffer[5] == 'M')
+        else if (buffer[0] == '*' && buffer[1] == 'R' && buffer[2] == 'K' && buffer[3] == ' ' && buffer[4] == 'W' && buffer[5] == 'M' && buffer[6] == ' ')
         {
-          id(rkwm).publish_state(buffer[8] == 'N');
+            id(rkwm).position = buffer[8] == 'F' || buffer[8] == 'L' ? VALVE_CLOSED : VALVE_OPEN;
+            id(rkwm).publish_state();
         }
       }
     }
