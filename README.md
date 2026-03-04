@@ -1,25 +1,103 @@
-# Gauhartas8266 ESPHome Project
+# ESPHome Gauhartas 204
 
-This project is designed to control and monitor home automation devices using an ESP8266-based microcontroller. It integrates with Home Assistant and communicates with UART-enabled devices to manage lights, sensors, and valves.
+Прошивка [ESPHome](https://esphome.io) для шлюза между Home Assistant и контроллером умного дома по UART. Устройство на базе **ESP8266** (D1 mini) управляет освещением и водяным клапаном, получает обратную связь по состоянию реле и клапана.
 
-## Features
+## Возможности
 
-- **Home Assistant Integration**: Control and monitor devices through Home Assistant API.
-- **UART Communication**: Send and receive commands via UART to control connected devices.
-- **Web Interface**: Includes a simple web server for basic interaction.
-- **OTA Updates**: Easily update the firmware wirelessly.
-- **Custom UART Line Sensor**: Reads and parses UART messages to update the device state in real-time.
-- **Fallback Hotspot**: Automatically creates an access point if the Wi-Fi connection fails.
+- **Home Assistant** — управление и мониторинг через API.
+- **Освещение** — 13 реле (модули 1 и 2): ванная, кухня, прихожая, гостиная, спальня, балкон, гардероб и др.
+- **Водяной клапан** — открытие/закрытие, отображение состояния (открыт/закрыт/тревога).
+- **Обратная связь по UART** — кастомный компонент `uart_read_line` читает ответы контроллера (`*RA`, `*RK`), обновляет состояния реле и клапана в HA.
+- **Web-интерфейс** — встроенный веб-сервер на порту 80.
+- **OTA** — обновление по воздуху (ESPHome Dashboard / HA) и **с GitHub Release**: устройство раз в 6 ч проверяет манифест на GitHub Pages и показывает доступное обновление в HA.
+- **Резервная точка доступа** — при отсутствии Wi‑Fi поднимается AP с captive portal для настройки сети (min_auth_mode: WPA2).
 
-## System Overview
+## Схема
 
-The system works as follows:
-1. The ESP8266 device communicates with peripherals via UART using defined commands.
-2. Incoming UART messages are parsed by the custom `UartReadLineSensor` class.
-3. Device states are updated in Home Assistant based on parsed data.
-4. Commands can be sent from Home Assistant or the web interface to control devices.
+```
+[Home Assistant] ←→ API ←→ [ESP8266 D1 mini] ←→ UART 19200 ←→ [Контроллер умного дома]
+                                                                        │
+                                                                  реле, клапан, кнопки
+```
 
-### Diagram
+## Железо
 
-```plaintext
-[Home Assistant] <--API--> [ESP8266 (Gauhartas8266)] <--UART--> [Devices]
+| Параметр   | Значение          |
+| ---------- | ----------------- |
+| Плата      | ESP8266 (D1 mini) |
+| UART TX    | GPIO1             |
+| UART RX    | GPIO3             |
+| Скорость   | 19200 бод         |
+| Status LED | D4 (инвертирован) |
+
+## Быстрый старт
+
+### Импорт через ESPHome Dashboard
+
+1. В [ESPHome Dashboard](https://esphome.io/docs/installing_esphome.html) → **Add device** → **Import from GitHub**.
+2. Укажите: `github://vaninanton/esphome-gauhartas204/esphome-gauhartas204-esp8266.yaml@main`.
+3. Скомпилируйте и залейте прошивку на устройство.
+
+### Ручная сборка
+
+```bash
+git clone https://github.com/vaninanton/esphome-gauhartas204.git
+cd esphome-gauhartas204
+esphome run esphome-gauhartas204-esp8266.yaml
+```
+
+Для заливки по сети: `esphome run esphome-gauhartas204-esp8266.yaml --device <IP>`.
+
+## Структура проекта
+
+- **`esphome-gauhartas204-esp8266.yaml`** — единственный конфиг (основной + бывший factory).
+- **`components/uart_read_line/`** — кастомный компонент:
+  - читает из UART строки до `\r`/`\n` (макс. 30 символов);
+  - публикует сырую строку в text_sensor (для отладки);
+  - разбор ответов `*RA`/`*RK` и обновление реле/клапана задаётся в YAML через `on_value` (лямбда в конфиге).
+
+В конфиге используется `platform: uart_read_line` с `uart_id: uart_bus` и опциональным `on_value` для парсинга протокола.
+
+## Протокол контроллера (UART)
+
+Текстовый протокол. Строки заканчиваются `\r\n`, макс. длина строки — 30 символов. Начало сообщения — `*`, конец — `$`, между полями — пробелы.
+
+### Исходящие команды (ESP → контроллер)
+
+| Назначение            | Формат / Пример                                                       |
+| --------------------- | --------------------------------------------------------------------- |
+| Реле вкл/выкл         | `*<модуль> PRT <порт 0–7> <1\|0> $\r\n` (например `*1 PRT 1 1 $\r\n`) |
+| Запрос состояния реле | `*1 STS$\r\n`, `*2 STS$\r\n`                                          |
+| Клапан открыть        | `*WM ON$\r\n`                                                         |
+| Клапан закрыть        | `*WM OFF$\r\n`                                                        |
+| Тревога (кнопка)      | `*WM ALR$\r\n`                                                        |
+| Запрос состояния воды | `*WM INF$\r\n`                                                        |
+| Выключить всё         | `*999998$\r\n`                                                        |
+
+### Входящие ответы (контроллер → ESP)
+
+- **Реле** — `*RA <модуль> <p0> <p1> … <p8> $`. В коде состояния берутся по индексам буфера: модуль 1 — 8, 10, 12, 14, 16, 18, 20; модуль 2 — 8, 10, 12, 16, 18, 20. Маппинг на сущности (BathroomLight, KitchenLight, …) задан в лямбде `on_value` в YAML.
+- **Клапан** — `*RK WM <состояние>$` (ON/OFF/ALR). В коде: символ в позиции 8 — `F` или `L` означает закрыт, иначе открыт.
+
+Проверки в лямбде: минимальная длина строки и завершение `$` перед разбором (защита от битых строк).
+
+### Опрос по таймеру
+
+Каждые 120 с: `*1 STS$\r\n` → пауза 3 с → `*2 STS$\r\n` → пауза 3 с → `*WM INF$\r\n`.
+
+## OTA с GitHub Release
+
+После публикации [релиза](https://github.com/vaninanton/esphome-gauhartas204/releases) воркфлоу собирает прошивку и загружает её в Release. **Publish Pages** подхватывает новый релиз, кладёт `.ota.bin` на GitHub Pages и обновляет `manifest.json`. Устройство (раз в 6 ч) запрашивает манифест с `vaninanton.github.io/.../manifest.json`; в Home Assistant в карточке устройства появляется обновление — можно установить одной кнопкой.
+
+## Разработка и CI
+
+- **CI** (`.github/workflows/ci.yml`) — сборка конфига на `stable` при пулл-реквестах и по расписанию.
+- **Релизы** (`.github/workflows/publish-firmware.yml`) — при публикации релиза собирается прошивка и артефакты загружаются в Release.
+- **Pages** (`.github/workflows/publish-pages.yml`) — после релиза подтягивает прошивку и генерирует манифест для OTA.
+
+Требуется Python 3.10–3.13 (для сборки ESPHome/PlatformIO). В проекте задан `.python-version` = 3.13.
+
+## Лицензия и ссылки
+
+- Репозиторий: [github.com/vaninanton/esphome-gauhartas204](https://github.com/vaninanton/esphome-gauhartas204)
+- ESPHome: [esphome.io](https://esphome.io)

@@ -1,16 +1,78 @@
 esphome:
   name: esphome-gauhartas204
   friendly_name: ESPHome Gauhartas 204
-  # Automatically add the mac address to the name
-  # so you can use a single firmware for all devices
-  # name_add_mac_suffix: true
-  includes:
-    - uart_read_line_sensor.h
+  # Подустройства по комнатам — в HA каждое отобразится отдельным устройством в своей зоне
+  devices:
+    - id: device_bathroom
+      name: "Ванная"
+      area_id: area_bathroom
+    - id: device_bathroom_hall
+      name: "Холл ванной"
+      area_id: area_bathroom_hall
+    - id: device_kitchen
+      name: "Кухня"
+      area_id: area_kitchen
+    - id: device_lobby
+      name: "Прихожая"
+      area_id: area_lobby
+    - id: device_living_room
+      name: "Гостиная"
+      area_id: area_living_room
+    - id: device_sleeping_room
+      name: "Спальня"
+      area_id: area_sleeping_room
+    - id: device_balcony
+      name: "Балкон"
+      area_id: area_balcony
+    - id: device_common
+      name: "Управление"
+      area_id: area_lobby
+  areas:
+    - id: area_bathroom
+      name: "Ванная"
+    - id: area_bathroom_hall
+      name: "Холл ванной"
+    - id: area_kitchen
+      name: "Кухня"
+    - id: area_lobby
+      name: "Прихожая"
+    - id: area_living_room
+      name: "Гостиная"
+    - id: area_sleeping_room
+      name: "Спальня"
+    - id: area_balcony
+      name: "Балкон"
+  on_boot:
+    priority: -100
+    then:
+      - logger.log: "Gauhartas 204: загрузка завершена"
+  project:
+    name: vaninanton.esphome-gauhartas204
+    version: dev  # replaced by GitHub workflows with release version
+  comment: "https://github.com/vaninanton/esphome-gauhartas204"
+
+dashboard_import:
+  package_import_url: github://vaninanton/esphome-gauhartas204/esphome-gauhartas204-esp8266.yaml@main
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [uart_read_line]
 
 esp8266:
   board: d1_mini
   framework:
     version: recommended
+
+# Время последнего ответа контроллера (*RA / *RK) — для проверки на зависание
+globals:
+  - id: last_controller_response_millis
+    type: uint32_t
+    initial_value: "0"
+  - id: controller_responding_ok
+    type: bool
+    initial_value: "false"
 
 # To be able to get logs from the device via serial and api.
 logger:
@@ -19,11 +81,25 @@ logger:
 # API is a requirement of the dashboard import.
 api:
 
-# OTA is required for Over-the-Air updating
+# OTA: через ESPHome (Dashboard/HA) и по манифесту с GitHub Pages (релизы)
 ota:
   - platform: esphome
+  - platform: http_request
+    id: ota_http
+
+http_request:
+  useragent: ESPHome/1.0
+  verify_ssl: false  # ESP8266 не поддерживает проверку сертификатов
+
+update:
+  - platform: http_request
+    name: Обновление с GitHub Release
+    source: https://vaninanton.github.io/esphome-gauhartas204/manifest.json
+    update_interval: 6h
+    entity_category: config
 
 wifi:
+  min_auth_mode: WPA2
   # Set up a wifi access point using the device name above
   ap:
 
@@ -52,6 +128,7 @@ switch:
   - platform: uart
     name: "BathroomLight"
     id: "BathroomLight"
+    device_id: device_bathroom
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 1 1 $\r\n"
@@ -60,6 +137,7 @@ switch:
   - platform: uart
     name: "BathroomHall"
     id: "BathroomHall"
+    device_id: device_bathroom_hall
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 2 1 $\r\n"
@@ -68,6 +146,7 @@ switch:
   - platform: uart
     name: "KitchenLight"
     id: "KitchenLight"
+    device_id: device_kitchen
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 3 1 $\r\n"
@@ -76,6 +155,7 @@ switch:
   - platform: uart
     name: "KitchenTable"
     id: "KitchenTable"
+    device_id: device_kitchen
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 4 1 $\r\n"
@@ -84,6 +164,7 @@ switch:
   - platform: uart
     name: "LobbyLight"
     id: "LobbyLight"
+    device_id: device_lobby
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*1 PRT 5 1 $\r\n"
@@ -92,6 +173,7 @@ switch:
   - platform: uart
     name: "LivingroomSubLight"
     id: "LivingroomSubLight"
+    device_id: device_living_room
     icon: "mdi:wall-sconce"
     data:
       turn_on: "*1 PRT 6 1 $\r\n"
@@ -100,6 +182,7 @@ switch:
   - platform: uart
     name: "BathroomSubLight"
     id: "BathroomSubLight"
+    device_id: device_bathroom
     icon: "mdi:wall-sconce"
     data:
       turn_on: "*1 PRT 7 1 $\r\n"
@@ -115,6 +198,7 @@ switch:
   - platform: uart
     name: "SleepingroomRight"
     id: "SleepingroomRight"
+    device_id: device_sleeping_room
     icon: "mdi:wall-sconce"
     data:
       turn_on: "*2 PRT 1 1 $\r\n"
@@ -123,6 +207,7 @@ switch:
   - platform: uart
     name: "BalconyLight"
     id: "BalconyLight"
+    device_id: device_balcony
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*2 PRT 2 1 $\r\n"
@@ -131,6 +216,7 @@ switch:
   - platform: uart
     name: "SleepingroomLight"
     id: "SleepingroomLight"
+    device_id: device_sleeping_room
     icon: "mdi:bed-king-outline"
     data:
       turn_on: "*2 PRT 3 1 $\r\n"
@@ -146,6 +232,7 @@ switch:
   - platform: uart
     name: "SleepingroomLeft"
     id: "SleepingroomLeft"
+    device_id: device_sleeping_room
     icon: "mdi:wall-sconce"
     data:
       turn_on: "*2 PRT 5 1 $\r\n"
@@ -154,6 +241,7 @@ switch:
   - platform: uart
     name: "LivingroomLight"
     id: "LivingroomLight"
+    device_id: device_living_room
     icon: "mdi:ceiling-light-multiple-outline"
     data:
       turn_on: "*2 PRT 6 1 $\r\n"
@@ -162,6 +250,7 @@ switch:
   - platform: uart
     name: SleepingroomWardrobe
     id: SleepingroomWardrobe
+    device_id: device_sleeping_room
     icon: "mdi:wardrobe-outline"
     data:
       turn_on: "*2 PRT 7 1 $\r\n"
@@ -172,47 +261,54 @@ button:
     name: "Выключить всё"
     data: "*999998$\r\n"
     id: "alloff"
+    device_id: device_common
     icon: "mdi:power"
+    entity_category: config
 
   # Вода перекрывается, сигнал об утечке
   - platform: uart
-    entity_category: "diagnostic"
+    entity_category: config
     name: "wm_alr"
+    device_id: device_common
     data: "*WM ALR$\r\n"
 
-  - platform: uart
-    entity_category: "diagnostic"
-    name: "wm_on"
-    data: "*WM ON$\r\n"
-
-  - platform: uart
-    entity_category: "diagnostic"
-    name: "wm_off"
-    data: "*WM OFF$\r\n"
+  # - platform: uart
+  #   entity_category: config
+  #   name: "wm_on"
+  #   device_id: device_common
+  #   data: "*WM ON$\r\n"
 
   # - platform: uart
-  #   entity_category: "diagnostic"
+  #   entity_category: config
+  #   name: "wm_off"
+  #   device_id: device_common
+  #   data: "*WM OFF$\r\n"
+
+  # - platform: uart
+  #   entity_category: config
   #   name: "wm_wsd"
   #   data: "*WM WSD$\r\n"
 
   # - platform: uart
-  #   entity_category: "diagnostic"
+  #   entity_category: config
   #   name: "rk_wm_low"
   #   data: "*RK WM LOW$\r\n"
 
-  # - platform: uart
-  #   entity_category: "diagnostic"
-  #   name: "wm_reb"
-  #   data: "*WM REB$\r\n"
+  - platform: uart
+    entity_category: config
+    name: "wm_reb"
+    data: "*WM REB$\r\n"
 
   - platform: restart
-    entity_category: "diagnostic"
+    entity_category: config
     name: "Restart ESPHOME"
+    device_id: device_common
 
 valve:
   - platform: template
     name: "water"
     id: "rkwm"
+    device_id: device_bathroom
     device_class: water
     icon: "mdi:water"
     optimistic: false
@@ -226,18 +322,66 @@ valve:
 
 # Сенсор, считывающий ответы из UART
 text_sensor:
-  - platform: custom
-    lambda: |-
-      auto uart_readline_sensor = new UartReadLineSensor(id(uart_bus));
-      App.register_component(uart_readline_sensor);
-      return {uart_readline_sensor};
-    text_sensors:
-      - name: "latestSerial"
-        entity_category: "diagnostic"
+  - platform: uart_read_line
+    id: uart_readline_sensor
+    uart_id: uart_bus
+    name: "latestSerial"
+    entity_category: "diagnostic"
+    on_value:
+      - lambda: |-
+          const char *b = x.c_str();
+          size_t len = x.size();
+          if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '1') {
+            id(BathroomLight).publish_state(b[8] == '1');
+            id(BathroomHall).publish_state(b[10] == '1');
+            id(KitchenLight).publish_state(b[12] == '1');
+            id(KitchenTable).publish_state(b[14] == '1');
+            id(LobbyLight).publish_state(b[16] == '1');
+            id(LivingroomSubLight).publish_state(b[18] == '1');
+            id(BathroomSubLight).publish_state(b[20] == '1');
+            id(last_controller_response_millis) = millis();
+          } else if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '2') {
+            id(SleepingroomRight).publish_state(b[8] == '1');
+            id(BalconyLight).publish_state(b[10] == '1');
+            id(SleepingroomLight).publish_state(b[12] == '1');
+            id(SleepingroomLeft).publish_state(b[16] == '1');
+            id(LivingroomLight).publish_state(b[18] == '1');
+            id(SleepingroomWardrobe).publish_state(b[20] == '1');
+            id(last_controller_response_millis) = millis();
+          } else if (len >= 9 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'K' && b[3] == ' ' && b[4] == 'W' && b[5] == 'M' && b[6] == ' ') {
+            id(rkwm).position = (b[8] == 'F' || b[8] == 'L') ? valve::VALVE_CLOSED : valve::VALVE_OPEN;
+            id(rkwm).publish_state();
+            id(last_controller_response_millis) = millis();
+          }
   - platform: version
     name: "ESPHome Version"
 
+# Контроллер отвечает = получен *RA или *RK не более 5 мин назад.
+# Проверка раз в 30 с (interval), в loop() только чтение bool — не нагружаем ESP8266.
+binary_sensor:
+  - platform: template
+    name: "Контроллер отвечает"
+    id: controller_responding
+    device_class: connectivity
+    entity_category: "diagnostic"
+    lambda: "return id(controller_responding_ok);"
+
+sensor:
+  - platform: wifi_signal
+    name: "Wi‑Fi сигнал"
+    update_interval: 60s
+    entity_category: "diagnostic"
+  - platform: uptime
+    name: "Uptime"
+    entity_category: "diagnostic"
+
 interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          uint32_t last = id(last_controller_response_millis);
+          id(controller_responding_ok) = (last != 0U) && ((millis() - last) < 300000U);
+          id(controller_responding).publish_state(id(controller_responding_ok));
   - interval: 120s
     then:
       - uart.write:
