@@ -40,10 +40,40 @@ jobs:
 
       - name: Fetch firmware files
         uses: robinraju/release-downloader@v1.11
+        continue-on-error: true
         with:
           latest: true
-          fileName: '*'
+          fileName: '*.ota.bin'
           out-file-path: output/firmware
+
+      - name: Generate OTA manifest
+        run: |
+          F=$(ls output/firmware/*.ota.bin 2>/dev/null | head -1)
+          if [ -n "$F" ]; then
+            FNAME=$(basename "$F")
+            MD5=$(md5sum "$F" | awk '{print $1}')
+            VER=$(echo "$FNAME" | sed -n 's/.*-\([0-9].*\)\.ota\.bin/\1/p')
+            [ -z "$VER" ] && VER=$(echo "$FNAME" | sed 's/\.ota\.bin//')
+            cat > output/manifest.json << EOF
+          {
+            "name": "ESPHome Gauhartas 204",
+            "version": "$VER",
+            "builds": [
+              {
+                "chipFamily": "ESP8266",
+                "ota": {
+                  "md5": "$MD5",
+                  "path": "firmware/$FNAME",
+                  "release_url": "https://github.com/${{ github.repository }}/releases",
+                  "summary": "Release $VER"
+                }
+              }
+            ]
+          }
+          EOF
+          else
+            echo '{"name":"ESPHome Gauhartas 204","version":"0.0.0","builds":[]}' > output/manifest.json
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3.0.1
