@@ -39,6 +39,7 @@ jobs:
           destination: ./output
 
       - name: Fetch firmware files
+        id: fetch-firmware
         uses: robinraju/release-downloader@v1.11
         continue-on-error: true
         with:
@@ -47,13 +48,19 @@ jobs:
           out-file-path: output/firmware
 
       - name: Generate OTA manifest
+        env:
+          RELEASE_TAG: ${{ steps.fetch-firmware.outputs.tag_name }}
         run: |
           F=$(ls output/firmware/*.ota.bin 2>/dev/null | head -1)
           if [ -n "$F" ]; then
             FNAME=$(basename "$F")
             MD5=$(md5sum "$F" | awk '{print $1}')
-            VER=$(echo "$FNAME" | sed -n 's/.*-\([0-9].*\)\.ota\.bin/\1/p')
-            [ -z "$VER" ] && VER=$(echo "$FNAME" | sed 's/\.ota\.bin//')
+            if [ -n "$RELEASE_TAG" ]; then
+              VER="$RELEASE_TAG"
+            else
+              VER=$(echo "$FNAME" | sed -n 's/.*-\([0-9].*\)\.ota\.bin/\1/p')
+              [ -z "$VER" ] && VER=$(echo "$FNAME" | sed 's/\.ota\.bin//')
+            fi
             cat > output/manifest.json << EOF
           {
             "name": "ESPHome Gauhartas 204",
