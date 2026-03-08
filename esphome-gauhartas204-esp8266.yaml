@@ -46,6 +46,15 @@ esphome:
     priority: -100
     then:
       - logger.log: "Gauhartas 204: загрузка завершена"
+      - delay: 3s
+      - uart.write:
+          data: "*1 STS$\r\n"
+      - delay: 3s
+      - uart.write:
+          data: "*2 STS$\r\n"
+      - delay: 3s
+      - uart.write:
+          data: "*WM INF$\r\n"
   project:
     name: vaninanton.esphome-gauhartas204
     version: dev  # replaced by GitHub workflows with release version
@@ -66,6 +75,7 @@ esp8266:
     version: recommended
 
 # Время последнего ответа контроллера (*RA / *RK) — для проверки на зависание
+# Последняя строка по типу пакета — для сенсоров latestSerialRk1/Rk2/RkWm/Unknown
 globals:
   - id: last_controller_response_millis
     type: uint32_t
@@ -73,6 +83,18 @@ globals:
   - id: controller_responding_ok
     type: bool
     initial_value: "false"
+  - id: last_serial_ra1
+    type: std::string
+    initial_value: '""'
+  - id: last_serial_ra2
+    type: std::string
+    initial_value: '""'
+  - id: last_serial_rkwm
+    type: std::string
+    initial_value: '""'
+  - id: last_serial_unknown
+    type: std::string
+    initial_value: '""'
 
 # To be able to get logs from the device via serial and api.
 logger:
@@ -331,7 +353,10 @@ text_sensor:
       - lambda: |-
           const char *b = x.c_str();
           size_t len = x.size();
+          while (len > 0 && (b[len-1] == ' ' || b[len-1] == '\t')) { len--; }
           if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '1') {
+            id(last_serial_ra1) = x;
+            id(latestSerialRk1).publish_state(id(last_serial_ra1));
             id(BathroomLight).publish_state(b[8] == '1');
             id(BathroomHall).publish_state(b[10] == '1');
             id(KitchenLight).publish_state(b[12] == '1');
@@ -341,6 +366,8 @@ text_sensor:
             id(BathroomSubLight).publish_state(b[20] == '1');
             id(last_controller_response_millis) = millis();
           } else if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '2') {
+            id(last_serial_ra2) = x;
+            id(latestSerialRk2).publish_state(id(last_serial_ra2));
             id(SleepingroomRight).publish_state(b[8] == '1');
             id(BalconyLight).publish_state(b[10] == '1');
             id(SleepingroomLight).publish_state(b[12] == '1');
@@ -349,10 +376,35 @@ text_sensor:
             id(SleepingroomWardrobe).publish_state(b[20] == '1');
             id(last_controller_response_millis) = millis();
           } else if (len >= 9 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'K' && b[3] == ' ' && b[4] == 'W' && b[5] == 'M' && b[6] == ' ') {
+            id(last_serial_rkwm) = x;
+            id(latestSerialRkWm).publish_state(id(last_serial_rkwm));
             id(rkwm).position = (b[8] == 'F' || b[8] == 'L') ? valve::VALVE_CLOSED : valve::VALVE_OPEN;
             id(rkwm).publish_state();
             id(last_controller_response_millis) = millis();
+          } else {
+            id(last_serial_unknown) = x;
+            id(latestSerialUnknown).publish_state(id(last_serial_unknown));
           }
+  - platform: template
+    name: "latestSerialRk1"
+    id: latestSerialRk1
+    entity_category: diagnostic
+    lambda: "return id(last_serial_ra1);"
+  - platform: template
+    name: "latestSerialRk2"
+    id: latestSerialRk2
+    entity_category: diagnostic
+    lambda: "return id(last_serial_ra2);"
+  - platform: template
+    name: "latestSerialRkWm"
+    id: latestSerialRkWm
+    entity_category: diagnostic
+    lambda: "return id(last_serial_rkwm);"
+  - platform: template
+    name: "latestSerialUnknown"
+    id: latestSerialUnknown
+    entity_category: diagnostic
+    lambda: "return id(last_serial_unknown);"
   - platform: version
     name: "ESPHome Version"
 
