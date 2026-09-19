@@ -180,6 +180,9 @@ http_request:
   verify_ssl: false  # ESP8266 не поддерживает проверку сертификатов
   # По умолчанию буфер приёма TLS — 512 байт: ответ больше одной записи не читается
   # («Stream pointer vanished»), а GitHub Pages не умеет согласовывать размер фрагмента
+  # 4 КБ хватает, чтобы прочитать манифест (он влезает в одну TLS-запись).
+  # Сама прошивка по HTTPS не скачивается: для её записей нужно 16 КБ, а столько
+  # свободной памяти на ESP8266 нет — обновление ставится через ESPHome Dashboard.
   tls_buffer_size_rx: 4096
 
 update:
@@ -419,14 +422,6 @@ button:
     entity_category: config
     on_press:
       - update.check: github_update
-
-  - platform: template
-    name: "Установить обновление"
-    device_id: device_common
-    icon: "mdi:cloud-download-outline"
-    entity_category: config
-    on_press:
-      - update.perform: github_update
 
   - platform: restart
     entity_category: config
