@@ -58,7 +58,10 @@ jobs:
             echo "Ожидался ровно один манифест, найдено: ${manifests[*]}" >&2
             exit 1
           fi
-          jq '(.builds[].ota.path, .builds[].parts[].path) |= "firmware/" + .' \
+          # summary укорачиваем: сборщик кладёт туда весь текст релиза, и манифест на
+          # несколько килобайт ESP8266 не дочитывает по HTTPS (Stream pointer vanished)
+          jq '(.builds[].ota.path, .builds[].parts[].path) |= "firmware/" + .
+              | .builds[].ota.summary = "Release " + .version' \
             "${manifests[0]}" > output/manifest.json
 
       - name: Upload artifact
