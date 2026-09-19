@@ -32,6 +32,10 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4.2.2
 
+      # Каталог нужно создать до Jekyll: он работает в докере от root и делает output/
+      # своим, после чего release-downloader (от runner) не может создать в нём подкаталог
+      - run: mkdir -p output/firmware
+
       - name: Build
         uses: actions/jekyll-build-pages@v1.0.13
         with:
