@@ -1,7 +1,5 @@
-from . import text_sensor as uart_read_line_text_sensor
+import esphome.codegen as cg
 
-CODEOWNERS = ["@user"]
-DEPENDENCIES = ["uart"]
+CODEOWNERS = ["@vaninanton"]
 
-CONFIG_SCHEMA = uart_read_line_text_sensor.CONFIG_SCHEMA
-to_code = uart_read_line_text_sensor.to_code
+uart_read_line_ns = cg.esphome_ns.namespace("uart_read_line")

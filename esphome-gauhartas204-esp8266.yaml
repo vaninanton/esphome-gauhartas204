@@ -24,6 +24,9 @@ esphome:
     - id: device_balcony
       name: "Балкон"
       area_id: area_balcony
+    - id: device_wardrobe
+      name: "Гардеробная"
+      area_id: area_wardrobe
     - id: device_common
       name: "Управление"
       area_id: area_lobby
@@ -42,19 +45,8 @@ esphome:
       name: "Спальня"
     - id: area_balcony
       name: "Балкон"
-  on_boot:
-    priority: -100
-    then:
-      - logger.log: "Gauhartas 204: загрузка завершена"
-      - delay: 3s
-      - uart.write:
-          data: "*1 STS$\r\n"
-      - delay: 3s
-      - uart.write:
-          data: "*2 STS$\r\n"
-      - delay: 3s
-      - uart.write:
-          data: "*WM INF$\r\n"
+    - id: area_wardrobe
+      name: "Гардеробная"
   project:
     name: vaninanton.esphome-gauhartas204
     version: dev  # replaced by GitHub workflows with release version
@@ -74,27 +66,15 @@ esp8266:
   framework:
     version: recommended
 
-# Время последнего ответа контроллера (*RA / *RK) — для проверки на зависание
-# Последняя строка по типу пакета — для сенсоров latestSerialRk1/Rk2/RkWm/Unknown
 globals:
+  # Время последнего ответа контроллера (*RA / *RK) — для датчика «Контроллер отвечает»
   - id: last_controller_response_millis
     type: uint32_t
     initial_value: "0"
-  - id: controller_responding_ok
-    type: bool
-    initial_value: "false"
-  - id: last_serial_ra1
-    type: std::string
-    initial_value: '""'
-  - id: last_serial_ra2
-    type: std::string
-    initial_value: '""'
-  - id: last_serial_rkwm
-    type: std::string
-    initial_value: '""'
-  - id: last_serial_unknown
-    type: std::string
-    initial_value: '""'
+  # Последняя активность по источникам статуса: [0] — *RA 1, [1] — *RA 2, [2] — *RK WM.
+  # Обновляется и ответом, и отправленным запросом; 0 — активности ещё не было.
+  - id: status_activity_millis
+    type: std::array<uint32_t, 3>
 
 # To be able to get logs from the device via serial and api.
 logger:
@@ -102,6 +82,92 @@ logger:
 
 # API is a requirement of the dashboard import.
 api:
+  actions:
+    # Подсветка клавиш выключателей: esphome.esphome_gauhartas204_set_backlight
+    # codes — коды клавиш (как в событиях нажатий, например "100601"), state — зажечь/погасить.
+    # Выключатель слушает шину сам; номер модуля в команде ему не важен.
+    # Контроллер перезаписывает подсветку клавиши, когда переключает связанное с ней реле.
+    - action: set_backlight
+      variables:
+        codes: string[]
+        state: bool
+      then:
+        - script.execute:
+            id: send_backlight
+            codes: !lambda "return codes;"
+            state: !lambda "return state;"
+
+    # Состояние датчика протечки (раньше его сообщал сервис на Raspberry Pi по данным облака Xiaomi):
+    # esphome.esphome_gauhartas204_set_water_sensor_state, state — ok | alarm | offline | low_battery.
+    # Внимание: ok шлёт *WM ON$, то есть открывает клапан; это же единственный выход из режима offline.
+    - action: set_water_sensor_state
+      variables:
+        state: string
+      then:
+        - script.execute:
+            id: send_water_sensor_state
+            state: !lambda "return state;"
+
+script:
+  - id: send_water_sensor_state
+    parameters:
+      state: string
+    then:
+      - lambda: |-
+          const char *cmd = nullptr;
+          if (state == "ok") cmd = "*WM ON$\r\n";
+          else if (state == "alarm") cmd = "*WM ALR$\r\n";
+          else if (state == "offline") cmd = "*WM WSD$\r\n";
+          else if (state == "low_battery") cmd = "*RK WM LOW$\r\n";
+          if (cmd == nullptr) {
+            ESP_LOGW("gauhartas", "send_water_sensor_state: неизвестное состояние '%s'", state.c_str());
+            return;
+          }
+          ESP_LOGD("gauhartas", "Датчик протечки: %s", state.c_str());
+          id(uart_bus).write_str(cmd);
+
+  # Кадры *RK 1 <код> <0|1> $ уходят одной строкой: выключатели делят поток по '*'/'$'.
+  # Пустой список codes — все клавиши квартиры (кнопки «Подсветка: включить/выключить всё»).
+  - id: send_backlight
+    parameters:
+      codes: string[]
+      state: bool
+    then:
+      - lambda: |-
+          // Выключатели с подсветкой: 1000–1010 без отсутствующего 1004
+          static const char *const ALL_SWITCHES[] = {"1000", "1001", "1002", "1003", "1005",
+                                                     "1006", "1007", "1008", "1009", "1010"};
+          const char *const suffix = state ? " 1 $" : " 0 $";
+          std::string out;
+          out.reserve((codes.empty() ? 21 : codes.size()) * 16 + 2);
+          auto append = [&](const char *code, size_t len) {
+            out.append("*RK 1 ", 6);
+            out.append(code, len);
+            out.append(suffix, 4);
+          };
+          if (codes.empty()) {
+            for (const char *num : ALL_SWITCHES) {
+              for (const char *key : {"01", "04"}) {
+                out.append("*RK 1 ", 6);
+                out.append(num, 4);
+                out.append(key, 2);
+                out.append(suffix, 4);
+              }
+            }
+            append("100206", 6);  // индикатор «выключить всё» у кровати
+          } else {
+            for (const auto &code : codes) {
+              if (code.size() != 6 || code.find_first_not_of("0123456789") != std::string::npos) {
+                ESP_LOGW("gauhartas", "set_backlight: неверный код клавиши '%s'", code.c_str());
+                continue;
+              }
+              append(code.c_str(), code.size());
+            }
+          }
+          if (out.empty())
+            return;
+          out.append("\r\n", 2);
+          id(uart_bus).write_str(out.c_str());
 
 # OTA: через ESPHome (Dashboard/HA) и по манифесту с GitHub Pages (релизы)
 ota:
@@ -205,7 +271,7 @@ switch:
     name: "BathroomSubLight"
     id: "BathroomSubLight"
     device_id: device_bathroom
-    icon: "mdi:wall-sconce"
+    icon: "mdi:led-strip-variant"  # подсветка пола
     data:
       turn_on: "*1 PRT 7 1 $\r\n"
       turn_off: "*1 PRT 7 0 $\r\n"
@@ -272,7 +338,7 @@ switch:
   - platform: uart
     name: SleepingroomWardrobe
     id: SleepingroomWardrobe
-    device_id: device_sleeping_room
+    device_id: device_wardrobe
     icon: "mdi:wardrobe-outline"
     data:
       turn_on: "*2 PRT 7 1 $\r\n"
@@ -319,12 +385,47 @@ button:
   - platform: uart
     entity_category: config
     name: "wm_reb"
+    device_id: device_common
     data: "*WM REB$\r\n"
+
+  - platform: template
+    name: "Подсветка: включить всё"
+    device_id: device_common
+    icon: "mdi:led-on"
+    on_press:
+      - script.execute:
+          id: send_backlight
+          codes: !lambda "return {};"  # пустой список — вся квартира
+          state: true
+
+  - platform: template
+    name: "Подсветка: выключить всё"
+    device_id: device_common
+    icon: "mdi:led-off"
+    on_press:
+      - script.execute:
+          id: send_backlight
+          codes: !lambda "return {};"  # пустой список — вся квартира
+          state: false
 
   - platform: restart
     entity_category: config
     name: "Restart ESPHOME"
     device_id: device_common
+
+# Отправка произвольной команды в шину (для отладки протокола); \r\n добавляется автоматически
+text:
+  - platform: template
+    name: "UART команда"
+    device_id: device_common
+    entity_category: config
+    mode: text
+    max_length: 100  # можно отправить несколько кадров подряд
+    optimistic: true
+    set_action:
+      - lambda: |-
+          id(uart_bus).write_str(x.c_str());
+          id(uart_bus).write_str("\r\n");
 
 valve:
   - platform: template
@@ -342,6 +443,84 @@ valve:
       - uart.write:
           data: "*WM OFF$\r\n"
 
+# Нажатия физических выключателей. Выключатель шлёт в шину *10XXYY$, где XX — номер выключателя,
+# YY — клавиша: 01/04 — короткое нажатие верхней/нижней (тип события — что переключает клавиша),
+# 02/05 — двойное (UpperDouble/LowerDouble), 03/06 — долгое (UpperLong/LowerLong).
+# Сопоставление кодов с событиями — в лямбде text_sensor ниже.
+event:
+  # В холле ванной: обе клавиши переключают свет в гардеробной
+  - platform: template
+    id: switch_1000
+    name: "Выключатель 1000"
+    device_id: device_bathroom_hall
+    device_class: button
+    event_types: [SleepingroomWardrobe, SleepingroomWardrobeLower, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1001
+    name: "Выключатель 1001"
+    device_id: device_kitchen
+    device_class: button
+    event_types: [KitchenTable, KitchenLight, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1002
+    name: "Выключатель 1002"
+    device_id: device_sleeping_room
+    device_class: button
+    event_types: [SleepingroomLight, SleepingroomLeft, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1003
+    name: "Выключатель 1003"
+    device_id: device_bathroom_hall
+    device_class: button
+    # Клавиша 04 переключает порт 0 модуля 1, к которому ничего не подключено, — удобна для автоматизаций HA
+    event_types: [BathroomHall, Key04, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1005
+    name: "Выключатель 1005"
+    device_id: device_bathroom
+    device_class: button
+    event_types: [BathroomLight, BathroomSubLight, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1006
+    name: "Выключатель 1006"
+    device_id: device_lobby
+    device_class: button
+    event_types: [LobbyLight, MasterOff, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1007
+    name: "Выключатель 1007"
+    device_id: device_sleeping_room
+    device_class: button
+    event_types: [SleepingroomLight, LivingroomLight, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1008
+    name: "Выключатель 1008"
+    device_id: device_balcony
+    device_class: button
+    # Обе клавиши переключают свет на балконе
+    event_types: [BalconyLight, BalconyLightLower, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1009
+    name: "Выключатель 1009"
+    device_id: device_living_room
+    device_class: button
+    event_types: [LivingroomLight, LivingroomSubLight, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  - platform: template
+    id: switch_1010
+    name: "Выключатель 1010"
+    device_id: device_wardrobe
+    device_class: button
+    # В гардеробной: обе клавиши переключают свет в гардеробной
+    event_types: [SleepingroomWardrobe, SleepingroomWardrobeLower, UpperLong, LowerLong, UpperDouble, LowerDouble]
+  # Выключатель воды: такой же, как остальные, но с синим и красным светодиодами и пищалкой.
+  # Шлёт в шину те же команды, что и ESP: *WM ON$ / *WM OFF$
+  - platform: template
+    id: water_button
+    name: "Выключатель воды"
+    device_id: device_bathroom
+    device_class: button
+    event_types: ["ON", "OFF"]
+
 # Сенсор, считывающий ответы из UART
 text_sensor:
   - platform: uart_read_line
@@ -351,12 +530,17 @@ text_sensor:
     entity_category: "diagnostic"
     on_value:
       - lambda: |-
+          // Пакет: '*' ... '$' (хвостовые пробелы игнорируются)
           const char *b = x.c_str();
           size_t len = x.size();
           while (len > 0 && (b[len-1] == ' ' || b[len-1] == '\t')) { len--; }
-          if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '1') {
-            id(last_serial_ra1) = x;
-            id(latestSerialRk1).publish_state(id(last_serial_ra1));
+          const bool framed = len >= 2 && b[0] == '*' && b[len-1] == '$';
+          // Любой кадр *RA/*RK приходит от контроллера — значит, он жив
+          if (framed && (x.compare(0, 4, "*RA ") == 0 || x.compare(0, 4, "*RK ") == 0))
+            id(last_controller_response_millis) = millis();
+          // *RA <модуль> <p0> <p1> ... <p7> $ — состояние порта N в позиции 6 + 2*N
+          const bool is_ra = framed && len >= 21 && x.compare(0, 4, "*RA ") == 0 && b[5] == ' ';
+          if (is_ra && b[4] == '1') {
             id(BathroomLight).publish_state(b[8] == '1');
             id(BathroomHall).publish_state(b[10] == '1');
             id(KitchenLight).publish_state(b[12] == '1');
@@ -364,59 +548,116 @@ text_sensor:
             id(LobbyLight).publish_state(b[16] == '1');
             id(LivingroomSubLight).publish_state(b[18] == '1');
             id(BathroomSubLight).publish_state(b[20] == '1');
-            id(last_controller_response_millis) = millis();
-          } else if (len >= 21 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'A' && b[4] == '2') {
-            id(last_serial_ra2) = x;
-            id(latestSerialRk2).publish_state(id(last_serial_ra2));
+            id(status_activity_millis)[0] = millis();
+          } else if (is_ra && b[4] == '2') {
             id(SleepingroomRight).publish_state(b[8] == '1');
             id(BalconyLight).publish_state(b[10] == '1');
             id(SleepingroomLight).publish_state(b[12] == '1');
             id(SleepingroomLeft).publish_state(b[16] == '1');
             id(LivingroomLight).publish_state(b[18] == '1');
             id(SleepingroomWardrobe).publish_state(b[20] == '1');
-            id(last_controller_response_millis) = millis();
-          } else if (len >= 9 && b[len-1] == '$' && b[0] == '*' && b[1] == 'R' && b[2] == 'K' && b[3] == ' ' && b[4] == 'W' && b[5] == 'M' && b[6] == ' ') {
-            id(last_serial_rkwm) = x;
-            id(latestSerialRkWm).publish_state(id(last_serial_rkwm));
-            id(rkwm).position = (b[8] == 'F' || b[8] == 'L') ? valve::VALVE_CLOSED : valve::VALVE_OPEN;
-            id(rkwm).publish_state();
-            id(last_controller_response_millis) = millis();
+            id(status_activity_millis)[1] = millis();
+          } else if (framed && x.compare(0, 7, "*RK WM ") == 0) {
+            // *RK WM <состояние>$: ON — открыт, OFF/ALR — закрыт, прочие состояние клапана не меняют
+            size_t end = len - 1;
+            while (end > 7 && b[end-1] == ' ') { end--; }
+            const std::string state = x.substr(7, end - 7);
+            if (id(water_module_state).state != state)
+              id(water_module_state).publish_state(state);
+            if (state == "ON" || state == "OFF" || state == "ALR") {
+              const float position = (state == "ON") ? valve::VALVE_OPEN : valve::VALVE_CLOSED;
+              if (id(rkwm).position != position) {
+                id(rkwm).position = position;
+                id(rkwm).publish_state();
+              }
+            }
+            id(status_activity_millis)[2] = millis();
+          } else if (framed && x.compare(0, 4, "*RK ") == 0) {
+            // *RK <модуль> <кнопка> <0|1> $ — подсветка клавиши; отдельно обрабатывать нечего
+          } else if (framed && len == 8 && std::all_of(b + 1, b + 7, [](char c) { return c >= '0' && c <= '9'; })) {
+            // *10XXYY$ — нажатие клавиши выключателя XX. YY: 01/04 — короткое нажатие верхней/нижней,
+            // 02/05 — двойное, 03/06 — долгое (контроллер реагирует только на короткие и на 06 у выключателей у кровати)
+            struct Switch { const char *num; event::Event *ev; const char *upper; const char *lower; };
+            static const Switch switches[] = {
+              {"1000", id(switch_1000), "SleepingroomWardrobe", "SleepingroomWardrobeLower"},
+              {"1001", id(switch_1001), "KitchenTable", "KitchenLight"},
+              {"1002", id(switch_1002), "SleepingroomLight", "SleepingroomLeft"},
+              {"1003", id(switch_1003), "BathroomHall", "Key04"},
+              {"1005", id(switch_1005), "BathroomLight", "BathroomSubLight"},
+              {"1006", id(switch_1006), "LobbyLight", "MasterOff"},
+              {"1007", id(switch_1007), "SleepingroomLight", "LivingroomLight"},
+              {"1008", id(switch_1008), "BalconyLight", "BalconyLightLower"},
+              {"1009", id(switch_1009), "LivingroomLight", "LivingroomSubLight"},
+              {"1010", id(switch_1010), "SleepingroomWardrobe", "SleepingroomWardrobeLower"},
+            };
+            const char *type = nullptr;
+            event::Event *ev = nullptr;
+            for (const auto &sw : switches) {
+              if (x.compare(1, 4, sw.num) != 0) continue;
+              ev = sw.ev;
+              if (b[5] == '0') {
+                switch (b[6]) {
+                  case '1': type = sw.upper; break;
+                  case '4': type = sw.lower; break;
+                  case '2': type = "UpperDouble"; break;
+                  case '5': type = "LowerDouble"; break;
+                  case '3': type = "UpperLong"; break;
+                  case '6': type = "LowerLong"; break;
+                }
+              }
+              break;
+            }
+            if (type != nullptr) {
+              ev->trigger(type);
+            } else {
+              ESP_LOGW("gauhartas", "Неизвестная клавиша выключателя: %s", x.c_str());
+              id(latestSerialUnknown).publish_state(x);
+            }
+          } else if (len == 7 && x.compare(0, 7, "*WM ON$") == 0) {
+            // Выключатель воды; состояние клапана придёт следом ответом *RK WM
+            id(water_button).trigger("ON");
+          } else if (len == 8 && x.compare(0, 8, "*WM OFF$") == 0) {
+            id(water_button).trigger("OFF");
           } else {
-            id(last_serial_unknown) = x;
-            id(latestSerialUnknown).publish_state(id(last_serial_unknown));
+            id(latestSerialUnknown).publish_state(x);
           }
+  # Последнее состояние модуля воды: ON, OFF, ALR (протечка), WSD (нет связи с датчиком), LOW (батарейка)
   - platform: template
-    name: "latestSerialRk1"
-    id: latestSerialRk1
+    name: "Состояние модуля воды"
+    id: water_module_state
+    device_id: device_bathroom
+    icon: "mdi:water-check"
     entity_category: diagnostic
-    lambda: "return id(last_serial_ra1);"
-  - platform: template
-    name: "latestSerialRk2"
-    id: latestSerialRk2
-    entity_category: diagnostic
-    lambda: "return id(last_serial_ra2);"
-  - platform: template
-    name: "latestSerialRkWm"
-    id: latestSerialRkWm
-    entity_category: diagnostic
-    lambda: "return id(last_serial_rkwm);"
   - platform: template
     name: "latestSerialUnknown"
     id: latestSerialUnknown
     entity_category: diagnostic
-    lambda: "return id(last_serial_unknown);"
   - platform: version
     name: "ESPHome Version"
 
 # Контроллер отвечает = получен *RA или *RK не более 5 мин назад.
-# Проверка раз в 30 с (interval), в loop() только чтение bool — не нагружаем ESP8266.
+# Состояние публикуется из interval раз в 30 с.
 binary_sensor:
+  # Датчик протечки живёт в HA (Zigbee): подписываемся на него через API и при протечке
+  # шлём модулю воды тревогу — он перекрывает воду. Обратно вода открывается только вручную.
+  - platform: homeassistant
+    id: leak_sensor
+    name: "Датчик протечки (из HA)"
+    entity_id: binary_sensor.wleak_kitchen_leak
+    internal: false  # у платформы homeassistant по умолчанию true
+    device_id: device_bathroom
+    device_class: moisture
+    entity_category: diagnostic
+    on_press:
+      - script.execute:
+          id: send_water_sensor_state
+          state: alarm
+
   - platform: template
     name: "Контроллер отвечает"
     id: controller_responding
     device_class: connectivity
     entity_category: "diagnostic"
-    lambda: "return id(controller_responding_ok);"
 
 sensor:
   - platform: wifi_signal
@@ -432,18 +673,26 @@ interval:
     then:
       - lambda: |-
           uint32_t last = id(last_controller_response_millis);
-          id(controller_responding_ok) = (last != 0U) && ((millis() - last) < 300000U);
-          id(controller_responding).publish_state(id(controller_responding_ok));
-  - interval: 120s
+          id(controller_responding).publish_state((last != 0U) && ((millis() - last) < 300000U));
+  # Запрос статуса — через 120 с после последнего ответа от этого источника
+  # (ответы на нажатия выключателей тоже считаются) и не чаще раза в 120 с, если контроллер молчит.
+  # За одну проверку уходит не больше одного запроса, поэтому между запросами не меньше 3 с.
+  - interval: 3s
     then:
-      - uart.write:
-          data: "*1 STS$\r\n"
-      - delay: 3s
-      - uart.write:
-          data: "*2 STS$\r\n"
-      - delay: 3s
-      - uart.write:
-          data: "*WM INF$\r\n"
+      - lambda: |-
+          static const char *const requests[] = {"*1 STS$", "*2 STS$", "*WM INF$"};
+          static const uint32_t PERIOD = 120000;
+          const uint32_t now = millis();
+          auto &last = id(status_activity_millis);
+          for (size_t i = 0; i < 3; i++) {
+            if (last[i] == 0 || now - last[i] >= PERIOD) {
+              ESP_LOGD("gauhartas", "Запрос статуса: %s", requests[i]);
+              id(uart_bus).write_str(requests[i]);
+              id(uart_bus).write_str("\r\n");
+              last[i] = now;
+              break;
+            }
+          }
 
 status_led:
   pin:

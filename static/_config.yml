@@ -1,4 +1,3 @@
-# CHANGEME: Set these variable to your liking
-title: ESPHome Project Template
-description: Powered by ESPHome and ESP Web Tools
+title: ESPHome Gauhartas 204
+description: Прошивка ESPHome для шлюза между Home Assistant и контроллером умного дома по UART
 theme: jekyll-theme-slate

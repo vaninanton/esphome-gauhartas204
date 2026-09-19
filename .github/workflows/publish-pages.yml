@@ -25,12 +25,12 @@ concurrency:
 jobs:
   build:
     name: Build
+    # После релиза — только если прошивка собралась и загрузилась
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4.2.2
-
-      - run: mkdir -p output/firmware
 
       - name: Build
         uses: actions/jekyll-build-pages@v1.0.13
@@ -39,48 +39,23 @@ jobs:
           destination: ./output
 
       - name: Fetch firmware files
-        id: fetch-firmware
         uses: robinraju/release-downloader@v1.11
-        continue-on-error: true
         with:
           latest: true
-          fileName: '*.ota.bin'
+          fileName: '*'
           out-file-path: output/firmware
 
-      - name: Generate OTA manifest
-        env:
-          RELEASE_TAG: ${{ steps.fetch-firmware.outputs.tag_name }}
+      # Устройства берут манифест из корня сайта (update.source в YAML), страница установки — тоже.
+      # Берём манифест релиза как есть и делаем все пути относительными к корню.
+      - name: Generate manifest
         run: |
-          F=$(ls output/firmware/*.ota.bin 2>/dev/null | head -1)
-          if [ -n "$F" ]; then
-            FNAME=$(basename "$F")
-            MD5=$(md5sum "$F" | awk '{print $1}')
-            if [ -n "$RELEASE_TAG" ]; then
-              VER="$RELEASE_TAG"
-            else
-              VER=$(echo "$FNAME" | sed -n 's/.*-\([0-9].*\)\.ota\.bin/\1/p')
-              [ -z "$VER" ] && VER=$(echo "$FNAME" | sed 's/\.ota\.bin//')
-            fi
-            cat > output/manifest.json << EOF
-          {
-            "name": "ESPHome Gauhartas 204",
-            "version": "$VER",
-            "builds": [
-              {
-                "chipFamily": "ESP8266",
-                "ota": {
-                  "md5": "$MD5",
-                  "path": "firmware/$FNAME",
-                  "release_url": "https://github.com/${{ github.repository }}/releases",
-                  "summary": "Release $VER"
-                }
-              }
-            ]
-          }
-          EOF
-          else
-            echo '{"name":"ESPHome Gauhartas 204","version":"0.0.0","builds":[]}' > output/manifest.json
+          manifests=(output/firmware/*.manifest.json)
+          if [ ${#manifests[@]} -ne 1 ]; then
+            echo "Ожидался ровно один манифест, найдено: ${manifests[*]}" >&2
+            exit 1
           fi
+          jq '(.builds[].ota.path, .builds[].parts[].path) |= "firmware/" + .' \
+            "${manifests[0]}" > output/manifest.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3.0.1

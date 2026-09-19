@@ -22,13 +22,19 @@ concurrency:
 
 jobs:
   build:
-    name: Build firmware
+    name: Build firmware (ESPHome ${{ matrix.esphome-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # stable — как в publish-firmware.yml; beta добавляется в ночном прогоне,
+        # чтобы заранее ловить поломки следующего релиза ESPHome, но не удваивать сборку на каждый PR
+        esphome-version: ${{ github.event_name == 'schedule' && fromJSON('["stable", "beta"]') || fromJSON('["stable"]') }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v6
-      - name: ESPHome stable
-        uses: esphome/build-action@v7
+      - name: Build
+        uses: esphome/build-action@v8.1.0
         with:
           yaml-file: esphome-gauhartas204-esp8266.yaml
-          version: stable
+          version: ${{ matrix.esphome-version }}

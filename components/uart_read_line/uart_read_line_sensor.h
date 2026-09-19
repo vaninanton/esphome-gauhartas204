@@ -1,57 +1,27 @@
-#ifndef UART_READ_LINE_SENSOR_H
-#define UART_READ_LINE_SENSOR_H
+#pragma once
 
-#include "esphome.h"
+#include "esphome/core/component.h"
+#include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/uart/uart.h"
 
-namespace esphome {
+namespace esphome::uart_read_line {
 
-class UartReadLineSensor : public Component, public uart::UARTDevice, public text_sensor::TextSensor
-{
-public:
-  UartReadLineSensor(uart::UARTComponent *parent) : uart::UARTDevice(parent) {}
-  void setup() override {}
+// Читает из UART строки, завершённые '\r' или '\n', и публикует каждую непустую строку.
+// Строка длиннее MAX_LINE_LENGTH обрезается, остаток до конца строки отбрасывается.
+// Непечатные байты (помехи на шине) заменяются на '?': строка уходит в API, а он принимает
+// только валидный UTF-8 — иначе клиент (Home Assistant, esphome logs) обрывает соединение.
+class UartReadLineSensor : public text_sensor::TextSensor, public Component, public uart::UARTDevice {
+ public:
+  static constexpr size_t MAX_LINE_LENGTH = 30;
 
-  int readline(int readch, char *buffer, int len)
-  {
-    static int pos = 0;
-    int rpos;
+  void loop() override;
+  void dump_config() override;
 
-    if (readch > 0) {
-      switch (readch) {
-      case '\n':
-      case '\r':
-        buffer[pos] = 0;
-        rpos = pos;
-        pos = 0;
-        return rpos;
-      default:
-        if (pos < len - 1) {
-          buffer[pos++] = readch;
-          buffer[pos] = 0;
-        } else {
-          buffer[pos] = 0;
-          rpos = pos;
-          pos = 0;
-          return rpos;
-        }
-      }
-    }
-
-    return -1;
-  }
-
-  void loop() override
-  {
-    const int max_line_length = 30;
-    static char buffer[max_line_length];
-    while (available())
-    {
-      if (readline(read(), buffer, max_line_length) > 0)
-        publish_state(buffer);
-    }
-  }
+ protected:
+  char buffer_[MAX_LINE_LENGTH];
+  size_t pos_{0};
+  bool overflow_{false};
+  bool corrupted_{false};
 };
 
-}  // namespace esphome
-
-#endif  // UART_READ_LINE_SENSOR_H
+}  // namespace esphome::uart_read_line
