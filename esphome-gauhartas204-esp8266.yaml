@@ -178,9 +178,13 @@ ota:
 http_request:
   useragent: ESPHome/1.0
   verify_ssl: false  # ESP8266 не поддерживает проверку сертификатов
+  # По умолчанию буфер приёма TLS — 512 байт: ответ больше одной записи не читается
+  # («Stream pointer vanished»), а GitHub Pages не умеет согласовывать размер фрагмента
+  tls_buffer_size_rx: 4096
 
 update:
   - platform: http_request
+    id: github_update
     name: Обновление с GitHub Release
     source: https://vaninanton.github.io/esphome-gauhartas204/manifest.json
     update_interval: 6h
@@ -407,6 +411,22 @@ button:
           id: send_backlight
           codes: !lambda "return {};"  # пустой список — вся квартира
           state: false
+
+  - platform: template
+    name: "Проверить обновление"
+    device_id: device_common
+    icon: "mdi:cloud-search-outline"
+    entity_category: config
+    on_press:
+      - update.check: github_update
+
+  - platform: template
+    name: "Установить обновление"
+    device_id: device_common
+    icon: "mdi:cloud-download-outline"
+    entity_category: config
+    on_press:
+      - update.perform: github_update
 
   - platform: restart
     entity_category: config
